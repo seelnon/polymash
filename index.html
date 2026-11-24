@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MashGrid Studio</title>
+    <meta name="description" content="Grid-snapped 2D sketch-to-3D low-poly inflation, pixel-art UV painting, and real-time WASM pin animation studio." />
+    <meta property="og:title" content="MashGrid Studio" />
+    <meta property="og:description" content="Grid-snapped 2D sketch-to-3D low-poly inflation, pixel-art UV painting, and real-time WASM pin animation studio." />
+    <meta property="og:type" content="website" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div id="app" class="studio-root">
+      <!-- Top Brutalist Command Bar -->
+      <header class="top-bar">
+        <div class="bar-group">
+          <span class="brand-mark">MASHGRID</span>
+          <div class="bar-sep"></div>
+          <button id="btn-new" class="icon-btn" title="New Blank Project (Clear Grid & UV)">NEW</button>
+          <button id="btn-undo" class="icon-btn" title="Undo [Ctrl+Z]">UNDO</button>
+          <button id="btn-redo" class="icon-btn" title="Redo [Ctrl+Y]">REDO</button>
+        </div>
+
+        <nav class="bar-group mode-tabs" aria-label="Pipeline Stage">
+          <button class="mode-btn active" data-mode="sketch">[1] SKETCH</button>
+          <button class="mode-btn" data-mode="inflate">[2] INFLATE 3D</button>
+          <button class="mode-btn" data-mode="paint">[3] UV PAINT</button>
+          <button class="mode-btn" data-mode="animate">[4] PIN ANIMATE</button>
+        </nav>
+
+        <div class="bar-group">
+          <select id="preset-select" class="brutal-select" aria-label="Load Starter Preset">
+            <option value="">PRESETS...</option>
+            <option value="bear">BEAR HEAD (FLAPS)</option>
+            <option value="dog">FLAPPY DOG (0% EARS)</option>
+            <option value="blocky">CHIBI HERO (LOW-POLY)</option>
+            <option value="axolotl">AXOLOTL SLIME</option>
+          </select>
+          <button id="btn-wireframe" class="icon-btn toggle-btn" title="Toggle 3D Wireframe [W]">WIRE</button>
+          <button id="btn-export-obj" class="icon-btn" title="Export 3D OBJ">OBJ</button>
+          <button id="btn-settings" class="icon-btn" title="UI Scale & General Settings">SET</button>
+          <button id="btn-help" class="icon-btn" title="Hotkeys & Engine [?]">?</button>
+        </div>
+      </header>
+
+      <!-- Main Workspace Viewport -->
+      <main class="workspace">
+        <div id="viewport-grid" class="viewport-grid mode-sketch">
+          <!-- 2D Sketch / UV Canvas Pane -->
+          <section id="pane-2d" class="viewport-pane">
+            <div class="pane-top-left">
+              <div class="pane-badge" id="pane-2d-label">2D GRID SKETCH</div>
+              <button id="btn-sketch-wire" class="mini-btn toggle-btn" title="Toggle 2D Sketch Triangle Wireframe">2D WIRE</button>
+            </div>
+            <canvas id="sketch-canvas"></canvas>
+            <canvas id="uv-canvas" class="hidden"></canvas>
+          </section>
+
+          <!-- 3D WebGL2 Viewport Pane -->
+          <section id="pane-3d" class="viewport-pane">
+            <div class="pane-badge" id="pane-3d-label">3D WEBGL2 MESH</div>
+            <canvas id="gl-canvas"></canvas>
+            <div id="gl-overlay-pins" class="pin-overlay"></div>
+            <div class="cam-strip">
+              <button class="cam-btn" data-cam="front">FRONT</button>
+              <button class="cam-btn" data-cam="iso">3/4</button>
+              <button class="cam-btn" data-cam="side">SIDE</button>
+              <button class="cam-btn" data-cam="back">BACK</button>
+            </div>
+            <div id="mesh-stats" class="mesh-stats">0V / 0T</div>
+          </section>
+        </div>
+
+        <!-- 1. Sketch & Layers Window (Docked Left-Below, auto-adjusts up to 10 layers) -->
+        <aside id="win-layers" class="float-win" style="bottom: 10px; left: 10px;">
+          <div class="win-header" data-drag-win="win-layers">
+            <span class="win-title">STROKES &amp; LAYERS</span>
+            <button class="win-min" data-min-win="win-layers">_</button>
+          </div>
+          <div class="win-body">
+            <div class="btn-row">
+              <button id="tool-draw-closed" class="tool-btn active" title="Solid Double-Sided Body">BODY</button>
+              <button id="tool-draw-flap" class="tool-btn" title="Hinge-Line Attached Flap">FLAP</button>
+              <button id="tool-draw-extrude" class="tool-btn" title="Area Extrusion / Intrusion">EXTR</button>
+              <button id="tool-edit-verts" class="tool-btn" title="Drag Grid Vertices">EDIT</button>
+            </div>
+
+            <div id="flap-side-row" class="btn-row hidden">
+              <span class="mini-label">SIDE</span>
+              <button class="mini-btn active" data-flap-side="sym">SYM</button>
+              <button class="mini-btn" data-flap-side="front">FRONT</button>
+              <button class="mini-btn" data-flap-side="back">BACK</button>
+            </div>
+
+            <div class="slider-row">
+              <label for="sl-grid">GRID</label>
+              <input id="sl-grid" type="range" min="12" max="48" step="4" value="24" />
+              <span id="val-grid" class="num-val">24</span>
+            </div>
+
+            <div class="check-row">
+              <button id="btn-mirror-x" class="mini-btn" title="Mirror X Symmetry">MIRR X</button>
+              <button id="btn-lasso-mode" class="mini-btn" title="Toggle Freehand Lasso vs Click-Poly">POLY</button>
+              <button id="btn-sketch-fit" class="mini-btn" title="Reset 2D Grid Zoom & Pan [R]">FIT</button>
+              <button id="btn-clear-sketch" class="mini-btn danger" title="Clear All Strokes">CLEAR</button>
+            </div>
+
+            <div class="dashed-sep"></div>
+            <div id="layer-list" class="layer-list"></div>
+          </div>
+        </aside>
+
+        <!-- 2. Inflation & Mesh Window (Top-Right, Collapsible Categories) -->
+        <aside id="win-inflate" class="float-win" style="top: 10px; right: 10px;">
+          <div class="win-header" data-drag-win="win-inflate">
+            <span class="win-title">INFLATION &amp; MESH</span>
+            <button class="win-min" data-min-win="win-inflate">_</button>
+          </div>
+          <div class="win-body">
+            <!-- Category 1: Global Mesh & Shading -->
+            <div class="cat-section" id="cat-mesh">
+              <button type="button" class="cat-head" data-cat-toggle="cat-mesh">
+                <span>MESH &amp; SHADING</span>
+                <span class="cat-arrow">▾</span>
+              </button>
+              <div class="cat-body">
+                <div class="btn-row">
+                  <button id="mesh-mode-lowpoly" class="tool-btn active">LOW POLY</button>
+                  <button id="mesh-mode-full" class="tool-btn">FULL MASH</button>
+                </div>
+
+                <div id="lowpoly-detail-row" class="slider-row">
+                  <label for="sl-poly-detail">POLYS</label>
+                  <input id="sl-poly-detail" type="range" min="2" max="18" step="1" value="6" />
+                  <span id="val-poly-detail" class="num-val">6</span>
+                </div>
+
+                <div class="slider-row">
+                  <label for="sl-depth">DEPTH</label>
+                  <input id="sl-depth" type="range" min="0.06" max="0.85" step="0.02" value="0.34" />
+                  <span id="val-depth" class="num-val">0.34</span>
+                </div>
+
+                <div class="slider-row">
+                  <label for="sl-round">PUFF</label>
+                  <input id="sl-round" type="range" min="0.40" max="1.30" step="0.05" value="0.65" />
+                  <span id="val-round" class="num-val">0.65</span>
+                </div>
+
+                <div class="btn-row">
+                  <button class="mini-btn shade-btn active" data-shade="faceted">FACET</button>
+                  <button class="mini-btn shade-btn" data-shade="clay">CLAY</button>
+                  <button class="mini-btn shade-btn" data-shade="unlit">PIXEL</button>
+                  <button id="btn-inf-alpha" class="mini-btn toggle-btn" title="See-Through Image Alpha Cutout">ALPHA</button>
+                  <button id="btn-inf-wire" class="mini-btn toggle-btn" title="Toggle 3D Wireframe Overlay [W]">WIRE</button>
+                </div>
+
+                <div id="inflate-tool-row" class="btn-row hidden">
+                  <button id="btn-inflate-orbit" class="mini-btn" title="Left-drag orbits 3D view">3D ORBIT</button>
+                  <button id="btn-inflate-grab" class="mini-btn active" title="Left-drag grabs & squishes mesh (empty space orbits)">3D GRAB</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Category 2: Active Part (BODY / FLAP only + depth/puff) -->
+            <div class="cat-section" id="cat-part">
+              <button type="button" class="cat-head" data-cat-toggle="cat-part">
+                <span>ACTIVE PART</span>
+                <span class="cat-arrow">▾</span>
+              </button>
+              <div class="cat-body">
+                <div class="part-bar">
+                  <div class="part-header" id="part-ctl-title">PART: NONE</div>
+                  <div class="part-nav">
+                    <button id="btn-part-prev" class="mini-btn part-nav-btn" title="Previous Part">&lt;</button>
+                    <button id="btn-part-next" class="mini-btn part-nav-btn" title="Next Part">&gt;</button>
+                  </div>
+                </div>
+                <div class="btn-row">
+                  <button id="btn-part-body" class="mini-btn active" title="Solid Body Part">BODY</button>
+                  <button id="btn-part-flap" class="mini-btn" title="Hinge-Attached Flap Part">FLAP</button>
+                </div>
+                <div class="slider-row">
+                  <label for="sl-part-depth">P.DPTH</label>
+                  <input id="sl-part-depth" type="range" min="-1.0" max="2.0" step="0.05" value="1.00" />
+                  <span id="val-part-depth" class="num-val">1.00</span>
+                </div>
+                <div class="slider-row">
+                  <label for="sl-part-puff">P.PUFF</label>
+                  <input id="sl-part-puff" type="range" min="0.4" max="1.8" step="0.05" value="1.00" />
+                  <span id="val-part-puff" class="num-val">1.00</span>
+                </div>
+                <div id="part-attach-row" class="slider-row hidden">
+                  <label for="sl-part-attach">ATTACH</label>
+                  <input id="sl-part-attach" type="range" min="0" max="100" step="5" value="0" />
+                  <span id="val-part-attach" class="num-val">0%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Category 3: Soft-Body Physics (Only in [2] INFLATE 3D, collapsed by default) -->
+            <div class="cat-section collapsed hidden" id="cat-physics">
+              <button type="button" class="cat-head" data-cat-toggle="cat-physics">
+                <span>SOFT-BODY PHYSICS</span>
+                <span class="cat-arrow">▸</span>
+              </button>
+              <div class="cat-body">
+                <div class="slider-row">
+                  <label for="sl-inf-elastic">ELAST</label>
+                  <input id="sl-inf-elastic" type="range" min="0.30" max="1.00" step="0.05" value="0.85" />
+                  <span id="val-inf-elastic" class="num-val">0.85</span>
+                </div>
+                <div class="slider-row">
+                  <label for="sl-inf-spring">SPRNG</label>
+                  <input id="sl-inf-spring" type="range" min="0.08" max="0.85" step="0.02" value="0.34" />
+                  <span id="val-inf-spring" class="num-val">0.34</span>
+                </div>
+                <div class="slider-row">
+                  <label for="sl-inf-damp">DAMP</label>
+                  <input id="sl-inf-damp" type="range" min="0.00" max="1.00" step="0.05" value="0.25" />
+                  <span id="val-inf-damp" class="num-val">0.25</span>
+                </div>
+                <div class="slider-row">
+                  <label for="sl-inf-bounce">BOUNC</label>
+                  <input id="sl-inf-bounce" type="range" min="0.00" max="1.00" step="0.05" value="0.55" />
+                  <span id="val-inf-bounce" class="num-val">0.55</span>
+                </div>
+                <div class="slider-row">
+                  <label for="sl-inf-grav" title="Vertical Gravity Pull / Float">GRAV</label>
+                  <input id="sl-inf-grav" type="range" min="-0.50" max="1.00" step="0.05" value="0.00" />
+                  <span id="val-inf-grav" class="num-val">0.00</span>
+                </div>
+                <div class="slider-row">
+                  <label for="sl-inf-wave" title="Energy Transfer Across Flaps & Limbs">WAVE</label>
+                  <input id="sl-inf-wave" type="range" min="0.00" max="1.00" step="0.05" value="0.65" />
+                  <span id="val-inf-wave" class="num-val">0.65</span>
+                </div>
+                <div class="slider-row">
+                  <label for="sl-inf-squash" title="Volume Squash & Stretch Conservation">SQUASH</label>
+                  <input id="sl-inf-squash" type="range" min="0.00" max="1.00" step="0.05" value="0.45" />
+                  <span id="val-inf-squash" class="num-val">0.45</span>
+                </div>
+                <div class="slider-row">
+                  <label for="sl-inf-hinge" title="Flap Hinge Joint Flexibility">HINGE</label>
+                  <input id="sl-inf-hinge" type="range" min="0.10" max="1.00" step="0.05" value="0.65" />
+                  <span id="val-inf-hinge" class="num-val">0.65</span>
+                </div>
+                <div class="slider-row">
+                  <label for="sl-inf-grab-r" title="Area of Grab Influence Radius">GRAB R</label>
+                  <input id="sl-inf-grab-r" type="range" min="0.00" max="0.50" step="0.02" value="0.18" />
+                  <span id="val-inf-grab-r" class="num-val">0.18</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- 3. Reference Image, Auto-Trace & Clamping Window (Bottom-Right) -->
+        <aside id="win-ref" class="float-win collapsed" style="bottom: 10px; right: 10px;">
+          <div class="win-header" data-drag-win="win-ref">
+            <span class="win-title">REFERENCE &amp; TRACE</span>
+            <button class="win-min" data-min-win="win-ref">+</button>
+          </div>
+          <div class="win-body">
+            <label id="ref-drop-zone" class="ref-drop" for="ref-upload">
+              <span id="ref-status">LOAD / DROP PNG REF</span>
+              <input id="ref-upload" type="file" accept="image/*" class="hidden" />
+            </label>
+
+            <div id="ref-preview-wrap" class="ref-preview-wrap hidden" title="Click image to toggle Clamping, Pixelization &amp; Trace Settings">
+              <canvas id="ref-preview-canvas" width="212" height="140"></canvas>
+              <div class="ref-preview-bar">
+                <span id="ref-meta-tag">64PX | 24G</span>
+                <span id="ref-toggle-hint">[▾] GEN SETTINGS</span>
+              </div>
+            </div>
+
+            <div id="ref-gen-settings" class="ref-gen-settings hidden">
+              <div class="cat-subhead">CLAMPING &amp; TRACE PARAMETERS</div>
+              <div class="btn-row">
+                <span class="mini-label">CLAMP</span>
+                <button type="button" class="mini-btn clamp-px-btn" data-clamp-px="32">32</button>
+                <button type="button" class="mini-btn clamp-px-btn active" data-clamp-px="64">64</button>
+                <button type="button" class="mini-btn clamp-px-btn" data-clamp-px="128">128</button>
+                <button type="button" class="mini-btn clamp-px-btn" data-clamp-px="256">256</button>
+              </div>
+              <div class="slider-row">
+                <label for="sl-ref-grid" title="Mesh Grid Scale Clamp">GRID</label>
+                <input id="sl-ref-grid" type="range" min="12" max="48" step="4" value="24" />
+                <span id="val-ref-grid" class="num-val">24</span>
+              </div>
+              <div class="slider-row">
+                <label for="sl-ref-simplify" title="Straight-Line Vertex Reduction">STRAIGHT</label>
+                <input id="sl-ref-simplify" type="range" min="0.20" max="2.40" step="0.10" value="0.75" />
+                <span id="val-ref-simplify" class="num-val">0.75</span>
+              </div>
+              <div class="slider-row">
+                <label for="sl-ref-alphacut" title="Alpha Channel Cutoff Threshold">ALPHA CUT</label>
+                <input id="sl-ref-alphacut" type="range" min="10" max="240" step="10" value="90" />
+                <span id="val-ref-alphacut" class="num-val">90</span>
+              </div>
+              <div class="slider-row">
+                <label for="sl-ref-pad" title="Grid Margin Cells">PAD</label>
+                <input id="sl-ref-pad" type="range" min="0" max="6" step="1" value="2" />
+                <span id="val-ref-pad" class="num-val">2</span>
+              </div>
+              <div class="check-row">
+                <button type="button" id="btn-ref-pixelate" class="mini-btn active" title="Nearest-Neighbor Pixel Art Downscale">PIXELIZE</button>
+                <button type="button" id="btn-ref-crop" class="mini-btn active" title="Auto-Crop Empty Transparent Margins">CROP</button>
+                <button type="button" id="btn-ref-mirror-back" class="mini-btn active" title="Align Back UV View Horizontally">MIRR B</button>
+                <button type="button" id="btn-ref-alpha-mode" class="mini-btn active" title="See-Through Alpha Cutout (No Solid/Black Enclosure)">ALPHA</button>
+              </div>
+              <button type="button" id="btn-ref-apply" class="tool-btn full-w">REGENERATE MESH + UV</button>
+            </div>
+
+            <div class="slider-row">
+              <label for="sl-ref-alpha">OPACITY</label>
+              <input id="sl-ref-alpha" type="range" min="0.05" max="0.90" step="0.05" value="0.35" />
+              <span id="val-ref-alpha" class="num-val">35%</span>
+            </div>
+            <button id="btn-ref-clear" class="mini-btn full-w">REMOVE REF</button>
+          </div>
+        </aside>
+
+        <!-- 4. Color Palette & UV Paint Window -->
+        <aside id="win-paint" class="float-win hidden" style="top: 10px; left: 10px;">
+          <div class="win-header" data-drag-win="win-paint">
+            <span class="win-title">COLOR &amp; UV PAINT</span>
+            <button class="win-min" data-min-win="win-paint">_</button>
+          </div>
+          <div class="win-body">
+            <div class="sv-box-wrap">
+              <canvas id="sv-picker" width="212" height="128"></canvas>
+            </div>
+            <div class="hue-bar-wrap">
+              <canvas id="hue-picker" width="212" height="15"></canvas>
+            </div>
+            <div class="color-readout">
+              <div id="color-swatch-active" class="color-swatch"></div>
+              <input id="hex-input" type="text" class="brutal-input" value="#D97724" maxlength="7" />
+              <select id="uv-res-select" class="brutal-select compact" title="Pixel Texture Resolution">
+                <option value="32">32px</option>
+                <option value="64">64px</option>
+                <option value="128">128px</option>
+                <option value="256">256px</option>
+              </select>
+            </div>
+
+            <div class="quick-swatches" id="quick-swatches"></div>
+
+            <div class="dashed-sep"></div>
+            <div class="btn-row">
+              <button class="tool-btn paint-tool active" data-ptool="brush">BRUSH</button>
+              <button class="tool-btn paint-tool" data-ptool="fill">FILL</button>
+              <button class="tool-btn paint-tool" data-ptool="pick">PICK</button>
+            </div>
+            <div class="slider-row">
+              <label for="sl-brush">SIZE</label>
+              <input id="sl-brush" type="range" min="1" max="8" step="1" value="1" />
+              <span id="val-brush" class="num-val">1</span>
+            </div>
+            <div class="check-row">
+              <button id="btn-uv-mirror" class="mini-btn active">MIRROR F/B</button>
+              <button id="btn-uv-symx" class="mini-btn">SYM X</button>
+              <button id="btn-uv-alpha" class="mini-btn toggle-btn" title="See-Through Image Alpha Cutout">ALPHA</button>
+              <button id="btn-uv-reset" class="mini-btn">REFILL</button>
+              <button id="btn-uv-fit" class="mini-btn" title="Reset UV Zoom & Pan [R]">FIT</button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- 5. Pin Animator & Soft-Body Window -->
+        <aside id="win-animate" class="float-win hidden" style="bottom: 10px; left: 10px;">
+          <div class="win-header" data-drag-win="win-animate">
+            <span class="win-title">PIN ANIMATOR &amp; TIMELINE</span>
+            <button class="win-min" data-min-win="win-animate">_</button>
+          </div>
+          <div class="win-body anim-body">
+            <div class="anim-controls">
+              <div class="bar-group">
+                <button id="btn-pin-mode-drag" class="tool-btn active">PIN / DRAG</button>
+                <button id="btn-pin-mode-grab" class="tool-btn">GRAB MESH</button>
+                <button id="btn-pin-mode-anchor" class="tool-btn">ANCHOR</button>
+                <button id="btn-pin-mode-del" class="tool-btn">DEL PIN</button>
+                <button id="btn-pin-clear" class="mini-btn danger">CLEAR</button>
+              </div>
+
+              <div class="bar-group">
+                <button id="btn-anim-play" class="tool-btn">PLAY</button>
+                <button id="btn-anim-rec" class="tool-btn rec-btn">REC LIVE</button>
+                <button id="btn-anim-key" class="mini-btn">+ KEY</button>
+                <button id="btn-anim-delkey" class="mini-btn">- KEY</button>
+                <button id="btn-anim-reset-pose" class="mini-btn">REST</button>
+              </div>
+
+              <div class="bar-group">
+                <div class="slider-row inline">
+                  <label for="sl-anim-grab-r" title="Area of Grab Influence Radius">GRAB R</label>
+                  <input id="sl-anim-grab-r" type="range" min="0.00" max="0.50" step="0.02" value="0.18" />
+                  <span id="val-anim-grab-r" class="num-val">0.18</span>
+                </div>
+                <div class="slider-row inline">
+                  <label for="sl-fps">FPS</label>
+                  <input id="sl-fps" type="range" min="12" max="60" step="4" value="24" />
+                  <span id="val-fps" class="num-val">24</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="timeline-wrap">
+              <span id="frame-readout" class="num-val frame-tag">F 00/60</span>
+              <div id="timeline-track" class="timeline-track">
+                <div id="timeline-keys" class="timeline-keys"></div>
+                <div id="timeline-head" class="timeline-head"></div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- General Settings Modal -->
+        <aside id="win-settings" class="float-win hidden modal-center">
+          <div class="win-header">
+            <span class="win-title">STUDIO SETTINGS</span>
+            <button id="btn-settings-close" class="win-min">X</button>
+          </div>
+          <div class="win-body">
+            <div class="help-section">
+              <div class="help-head">UI &amp; MENU SCALE</div>
+              <div class="slider-row">
+                <label for="sl-ui-scale">UI SIZE</label>
+                <input id="sl-ui-scale" type="range" min="0.80" max="1.45" step="0.05" value="1.15" />
+                <span id="val-ui-scale" class="num-val">115%</span>
+              </div>
+              <div class="btn-row" style="margin-top:4px">
+                <button class="mini-btn" data-ui-preset="0.85">85%</button>
+                <button class="mini-btn" data-ui-preset="1.00">100%</button>
+                <button class="mini-btn active" data-ui-preset="1.15">115%</button>
+                <button class="mini-btn" data-ui-preset="1.30">130%</button>
+              </div>
+            </div>
+
+            <div class="help-section">
+              <div class="help-head">VIEWPORT &amp; PANELS</div>
+              <div class="btn-row">
+                <button id="btn-set-sketch-wire" class="mini-btn toggle-btn">2D WIRE</button>
+                <button id="btn-set-3d-wire" class="mini-btn toggle-btn">3D WIRE</button>
+              </div>
+              <button id="btn-set-reset-layout" class="mini-btn full-w" style="margin-top:4px">RESET PANEL POSITIONS</button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Help / Hotkeys Modal -->
+        <aside id="win-help" class="float-win hidden modal-center">
+          <div class="win-header">
+            <span class="win-title">HOTKEYS &amp; ENGINE</span>
+            <button id="btn-help-close" class="win-min">X</button>
+          </div>
+          <div class="win-body help-body">
+            <div class="help-section">
+              <div class="help-head">2D SKETCH &amp; NAVIGATION</div>
+              <div class="help-row"><span>[BODY / FLAP / EXTR]</span><span>SOLID / HINGE FLAP / AREA EXTRUDE</span></div>
+              <div class="help-row"><span>[EDIT]</span><span>DRAG VERTEX / SHIFT+CLICK ADD / ALT+CLICK DEL</span></div>
+              <div class="help-row"><span>[WHEEL / R]</span><span>ZOOM 2D SKETCH OR UV / FIT VIEW</span></div>
+              <div class="help-row"><span>[R-DRAG / SPACE+DRAG]</span><span>PAN 2D GRID SKETCH CANVAS</span></div>
+              <div class="help-row"><span>[CLICK 3D PART (IN 1)]</span><span>SELECT PART / DRAG EMPTY TO ORBIT</span></div>
+            </div>
+            <div class="help-section">
+              <div class="help-head">3D VIEWPORT &amp; UV PAINT</div>
+              <div class="help-row"><span>[RIGHT / ALT + DRAG]</span><span>ORBIT 3D (OR PAN UV CANVAS)</span></div>
+              <div class="help-row"><span>[SHIFT + DRAG]</span><span>PAN 3D CAMERA / PAN UV CANVAS</span></div>
+              <div class="help-row"><span>[ALT + CLICK UV]</span><span>EYEDROPPER PICK COLOR</span></div>
+              <div class="help-row"><span>[W]</span><span>3D WIREFRAME TOGGLE</span></div>
+              <div class="help-row"><span>[3D GRAB (IN 2)]</span><span>PULL &amp; SQUISH AREA IN 3D</span></div>
+            </div>
+            <div class="help-section">
+              <div class="help-head">PIN ANIMATION &amp; WASM</div>
+              <div class="help-row"><span>[PIN / DRAG]</span><span>CLICK MESH TO DROP PIN &amp; DRAG</span></div>
+              <div class="help-row"><span>[SPACE]</span><span>PLAY / PAUSE LOOP TIMELINE (IN ANIMATE)</span></div>
+              <div class="help-row"><span>[REC LIVE]</span><span>CAPTURE FREEHAND PIN MOTION</span></div>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
